@@ -725,6 +725,18 @@
     });
     ParityApp.registerView('parity', { runButton: '#runAllBtn' });
 
+    window.addEventListener('hashchange', function () {
+      var n = location.hash.replace(/^#/, '');
+      if (views[n]) showView(n, true);
+    });
+
+    // Deferred: the other views register in their own scripts, which run after
+    // this one, so the hash cannot be resolved until the current tick drains.
+    setTimeout(function () {
+      var initial = location.hash.replace(/^#/, '');
+      if (initial && views[initial] && initial !== 'parity') showView(initial);
+    }, 0);
+
     fillSettingsForm();
     syncEngineBadge();
     renderMatrix();
@@ -848,7 +860,15 @@
   // Views register themselves; the router only knows the naming convention.
   var views = {};
 
-  function showView(name) {
+  function showView(name, fromHash) {
+    if (!views[name]) name = 'parity';
+
+    // replaceState rather than assigning location.hash: it makes the view
+    // linkable without firing hashchange back at us.
+    if (!fromHash) {
+      try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// */ }
+    }
+
     $$('.suite-tab').forEach(function (b) {
       var on = b.dataset.view === name;
       b.classList.toggle('active', on);

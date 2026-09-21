@@ -208,9 +208,13 @@ Three component pairs, each an accessible reference against a deliberately broke
 | **Product card** | `alt="image"`, heading "Item", link "Read more" | all three semantic |
 | **Sign-up form** | placeholder-as-label, no date format stated, error reads "Invalid input" | all three semantic |
 | **Search + toolbar** | visible "Search" / name "Submit", visible "Delete document" / name "Remove", unlabelled icon button, placeholder-only search field, button named "button" | four mechanical, one semantic |
+| **Article page** | image with no `alt` at all, heading jumping h1 → h3, `tabindex="3"`, heading "Details", link "click here" | three mechanical, two semantic |
 
-The third specimen is the interesting one: **four of its five defects never reach the model at all**,
-because they are decidable. That is the split working as intended.
+The last two are the interesting ones: most of their defects **never reach the model at all**,
+because they are decidable. That is the split working as intended. The article page exists
+specifically to exercise the three mechanical checks — missing `alt`, skipped heading level,
+positive `tabindex` — that no other specimen happens to trigger, so the whole mechanical layer
+is visible rather than partly dormant.
 
 ## Known limits
 
@@ -235,6 +239,9 @@ python3 -m http.server 8000     # or just open index.html directly
 ```
 
 It also deploys as-is to GitHub Pages (Settings → Pages → deploy from branch).
+
+Each prototype has its own hash, so views are linkable and survive a refresh:
+`#parity`, `#paths`, `#criteria`.
 
 Out of the box there is **no API key and nothing to configure** — triage falls back to a local
 rule-based heuristic so the page is demoable immediately. Add a key in **Settings** to switch the

@@ -30,8 +30,15 @@
     'button{font:inherit;padding:8px 12px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:7px;cursor:pointer}',
     '.bar{display:flex;gap:8px;align-items:center}',
     '.search{display:flex;gap:6px}',
+    'article{max-width:340px}',
+    'h1{font-size:19px;margin:0 0 10px}',
+    'h2,h3{font-size:14px;margin:14px 0 6px}',
+    'p{margin:0 0 10px}',
+    '.hero{display:block;width:100%;height:96px;border-radius:8px;background:linear-gradient(135deg,#dbe4f0,#c3d2e8)}',
     '.icon{font-size:15px;line-height:1}'
   ].join('');
+
+  var PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
 
   var SPECIMENS = [
     {
@@ -125,6 +132,39 @@
         { sc: '4.1.2', what: 'Icon button with no accessible name at all', code: 'none', mechanical: true },
         { sc: '1.1.1', what: 'Icon button labelled "button" — says nothing about what it does', code: 'F39' },
         { sc: '3.3.2', what: 'Search field labelled only by a placeholder', code: 'placeholder-only', mechanical: true }
+      ]
+    }
+    ,
+    {
+      id: 'article-page',
+      label: 'Article page',
+      blurb: 'Where the decidable defects live: a missing alt, a skipped heading level, a ' +
+             'forced tab position. None of them need a model.',
+      reference:
+        '<article>' +
+          '<h1>Designing for colour-blind users</h1>' +
+          '<img class="hero" src=\'' + PIXEL + '\' ' +
+            'alt="The same bar chart twice: once relying on hue alone, once with texture added">' +
+          '<h2>Why hue is not enough</h2>' +
+          '<p>Around one in twelve men has some form of colour vision deficiency. ' +
+            '<a href="/research/colour-vision">Read our colour vision research</a>.</p>' +
+          '<button>Subscribe to the newsletter</button>' +
+        '</article>',
+      candidate:
+        '<article>' +
+          '<h1>Designing for colour-blind users</h1>' +
+          '<img class="hero" src=\'' + PIXEL + '\'>' +
+          '<h3>Details</h3>' +
+          '<p>Around one in twelve men has some form of colour vision deficiency. ' +
+            '<a href="/research/colour-vision" tabindex="3">click here</a>.</p>' +
+          '<button>Subscribe to the newsletter</button>' +
+        '</article>',
+      planted: [
+        { sc: '1.1.1', what: 'Image has no alt attribute at all', code: 'no-alt', mechanical: true },
+        { sc: '1.3.1', what: 'Heading level jumps h1 to h3, implying a section that is not there', code: 'skip', mechanical: true },
+        { sc: '2.4.3', what: 'tabindex="3" forces this link out of document order', code: 'positive-tabindex', mechanical: true },
+        { sc: '2.4.6', what: 'Heading reads "Details" — describes nothing', code: 'generic' },
+        { sc: '2.4.4', what: 'Link reads "click here"', code: 'generic' }
       ]
     }
   ];
