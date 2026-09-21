@@ -568,8 +568,276 @@
     });
   }
 
+  /* ------------------------------------------------------------- criteria */
+
+  /*
+   * Accessibility audit.
+   *
+   * Three things make this an instrument rather than a vibe:
+   *
+   * 1. BLIND PAIRING. Both implementations ride one state under neutral slot
+   *    names, and which slot holds the reference is randomised per run. If the
+   *    state said "this one is the conformant reference", the model would agree
+   *    with the label and manufacture exactly the delta we claim to measure.
+   *
+   * 2. PERMUTATIONS. A System One model reads a distribution off the option
+   *    tokens in one forward pass, so the serialisation order of `criteria` can
+   *    move the answer. Each reading is taken three ways — both orderings of the
+   *    noul criteria, plus a polarity-flipped restatement where p(fail) should
+   *    come back as 1 - p(pass). Spread across those is the instrument's
+   *    instability, which is a different thing from the model being unsure, and
+   *    the two get conflated constantly.
+   *
+   * 3. ONE CALL. Questions in a request are evaluated independently, so every
+   *    permutation and both slots batch together with no cross-contamination,
+   *    and the shared state is billed once.
+   */
+
+  var GENERIC_ALT = ['image', 'photo', 'graphic', 'picture', 'img', 'icon', 'spacer',
+                     'logo', 'thumbnail', 'banner', 'button'];
+  var GENERIC_LINK = ['read more', 'click here', 'learn more', 'more', 'here', 'link',
+                      'details', 'see more', 'continue', 'go'];
+  var GENERIC_HEADING = ['item', 'details', 'information', 'input', 'section', 'title',
+                         'untitled', 'content', 'text', 'name', 'field',
+                         'button', 'icon', 'link', 'element', 'control'];
+  var GENERIC_ERROR = ['invalid input', 'error', 'invalid', 'try again', 'something went wrong',
+                       'failed', 'incorrect'];
+
+  function seededShuffle(arr, seed) {
+    var a = arr.slice();
+    var rand = function () {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(rand() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function reorder(obj, keys) {
+    var out = {};
+    keys.forEach(function (k) { if (k in obj) out[k] = obj[k]; });
+    return out;
+  }
+
+  function auditState(slots, criteria) {
+    var ref = {};
+    Object.keys(criteria).forEach(function (id) {
+      ref[id] = { name: criteria[id].name, level: criteria[id].level, requirement: criteria[id].text };
+    });
+
+    var impls = {};
+    slots.forEach(function (slot) {
+      impls[slot.id] = {
+        note: 'One implementation of the component. Judge it on its own terms.',
+        elements: slot.targets.map(function (t) {
+          return { ref: t.key, criterion: t.sc, element: t.element, detail: t.subject };
+        })
+      };
+    });
+
+    return {
+      // Word choice matters here: a single-pass model reads these tokens directly,
+      // so "broken down" (meaning decomposed) sits too close to the judgement
+      // being asked. "Separated into" carries no valence.
+      what_this_is: 'Two independent implementations of the same user-interface component, ' +
+        'each separated into the elements a WCAG success criterion applies to. They are ' +
+        'presented in arbitrary order and neither is known to be conformant.',
+      success_criteria: ref,
+      note_on_scope: 'Mechanically decidable violations (a missing alt attribute, a control ' +
+        'with no accessible name at all) have already been removed in code and are not below. ' +
+        'Every element here needs a judgement that cannot be computed.',
+      implementations: impls
+    };
+  }
+
+  function auditQuestions(slots, criteria) {
+    var q = {};
+    slots.forEach(function (slot) {
+      slot.targets.forEach(function (t) {
+        var sc = criteria[t.sc];
+        var base = 'Element ' + t.key + ' in implementation ' + slot.id +
+                   ' (' + sc.id + ' ' + sc.name + '). ';
+
+        // Reading 1 and 2: same question, both serialisations of the rubric.
+        q[slot.id + '_' + t.key + '_p0'] = {
+          type: 'noul',
+          instructions: base + sc.ask.instructions,
+          criteria: reorder(sc.ask.criteria, ['true', 'false'])
+        };
+        q[slot.id + '_' + t.key + '_p1'] = {
+          type: 'noul',
+          instructions: base + sc.ask.instructions,
+          criteria: reorder(sc.ask.criteria, ['false', 'true'])
+        };
+        // Reading 3: polarity flipped. p(fail) should return as 1 - p(pass).
+        q[slot.id + '_' + t.key + '_n0'] = {
+          type: 'noul',
+          instructions: base + 'Does this element FAIL the following requirement? ' +
+            sc.ask.instructions,
+          criteria: { 'true': sc.ask.criteria['false'], 'false': sc.ask.criteria['true'] }
+        };
+
+        // Which documented failure, asked over two shuffles of the taxonomy.
+        var keys = Object.keys(sc.failures);
+        [0, 1].forEach(function (k) {
+          q[slot.id + '_' + t.key + '_f' + k] = {
+            type: 'choice',
+            instructions: base + 'If it does not meet the requirement, which documented ' +
+              'failure mode is it? Answer "none" if it meets the requirement.',
+            criteria: reorder(sc.failures, k === 0 ? keys : seededShuffle(keys, 7 + k * 31))
+          };
+        });
+      });
+    });
+    return q;
+  }
+
+  function spreadOf(values) {
+    var ok = values.filter(function (v) { return typeof v === 'number'; });
+    if (!ok.length) return { mean: null, spread: null, n: 0 };
+    var mean = ok.reduce(function (a, b) { return a + b; }, 0) / ok.length;
+    return { mean: mean, spread: Math.max.apply(null, ok) - Math.min.apply(null, ok), n: ok.length };
+  }
+
+  /** Rule-based stand-in so Criteria works with no key configured. */
+  function heuristicAudit(slots) {
+    var readings = {};
+    var hit = function (s, list) {
+      s = String(s || '').toLowerCase().replace(/[.!]$/, '').trim();
+      return list.indexOf(s) >= 0;
+    };
+
+    slots.forEach(function (slot) {
+      slot.targets.forEach(function (t) {
+        var d = t.subject, pass = true, failure = 'none';
+        // `strength` is how clear-cut the rule match was: an exact hit on a known
+        // generic string is near-certain, an inferred one much less so. Reporting
+        // it is honest; inventing variance to make the bars look graded is not.
+        var strength = 0.5;
+
+        if (t.sc === '1.1.1') {
+          if (hit(d.alt_text, GENERIC_ALT)) { pass = false; failure = 'F39'; strength = 0.95; }
+          else if (d.filename && d.alt_text &&
+                   d.filename.toLowerCase().indexOf(String(d.alt_text).toLowerCase()) >= 0) {
+            pass = false; failure = 'F30'; strength = 0.8;
+          } else { strength = 0.55; }
+        } else if (t.sc === '2.4.4') {
+          if (hit(d.link_text, GENERIC_LINK)) { pass = false; failure = 'generic'; strength = 0.9; }
+          else { strength = 0.5; }
+        } else if (t.sc === '2.4.6') {
+          if (hit(d.text, GENERIC_HEADING)) { pass = false; failure = 'generic'; strength = 0.9; }
+          else if (String(d.text || '').trim().length < 3) {
+            pass = false; failure = 'generic'; strength = 0.7;
+          } else { strength = 0.5; }
+        } else if (t.sc === '3.3.2') {
+          if (d.placeholder && !d.described_by_text &&
+              (!d.accessible_name || d.accessible_name === d.placeholder)) {
+            pass = false; failure = 'placeholder-only'; strength = 0.85;
+          } else if (!d.described_by_text && /date|dob|phone|tel|postcode|zip/i.test(
+                       String(d.accessible_name) + String(d.placeholder))) {
+            pass = false; failure = 'format-unstated'; strength = 0.65;
+          } else { strength = 0.55; }
+        } else if (t.sc === '3.3.1') {
+          if (hit(d.message_text, GENERIC_ERROR)) { pass = false; failure = 'generic'; strength = 0.9; }
+          else { strength = 0.5; }
+        } else if (t.sc === '2.5.3') {
+          var v = String(d.visible_text || '').toLowerCase();
+          var n = String(d.accessible_name || '').toLowerCase();
+          if (v && n.indexOf(v) < 0) { pass = false; failure = 'replaced'; strength = 0.95; }
+          else { strength = 0.9; }
+        }
+
+        var value = pass ? 0.5 + strength * 0.45 : 0.5 - strength * 0.45;
+        readings[slot.id + '|' + t.key] = {
+          pass: value,
+          spread: null,          // no permutation was run; do not imply one was
+          stable: true,
+          untested: true,
+          readings: [value],
+          failure: failure,
+          failureStable: true,
+          failureConfidence: strength
+        };
+      });
+    });
+
+    return {
+      readings: readings, engine: 'heuristic', usage: null,
+      latencyMs: 0, costUsd: null, model: null, questions: 0, payload: null, raw: null
+    };
+  }
+
+  /**
+   * Audit a blind pair. `slots` is [{id, targets}] where targets carry
+   * { key, sc, element, subject, ref_label(slotId) }.
+   */
+  function auditAccessibility(slots, criteria, opts) {
+    opts = opts || {};
+    var total = slots.reduce(function (n, s) { return n + s.targets.length; }, 0);
+    if (!opts.apiKey || !total) return Promise.resolve(heuristicAudit(slots));
+
+    var state = auditState(slots, criteria);
+    var questions = auditQuestions(slots, criteria);
+    var unstableAt = opts.unstableAt != null ? opts.unstableAt : 0.25;
+
+    return callJev(state, questions, opts).then(function (res) {
+      var a = res.answers || {};
+      var readings = {};
+
+      slots.forEach(function (slot) {
+        slot.targets.forEach(function (t) {
+          var id = slot.id + '_' + t.key;
+          var p0 = a[id + '_p0'], p1 = a[id + '_p1'], n0 = a[id + '_n0'];
+          var vals = [
+            p0 && typeof p0.noul === 'number' ? p0.noul : null,
+            p1 && typeof p1.noul === 'number' ? p1.noul : null,
+            // The flipped reading is a pass-probability once inverted.
+            n0 && typeof n0.noul === 'number' ? 1 - n0.noul : null
+          ];
+          var st = spreadOf(vals);
+
+          var f0 = a[id + '_f0'] || {}, f1 = a[id + '_f1'] || {};
+          var agreed = f0.choice && f1.choice && f0.choice === f1.choice;
+
+          readings[slot.id + '|' + t.key] = {
+            pass: st.mean,
+            spread: st.spread,
+            stable: st.spread != null && st.spread <= unstableAt,
+            readings: vals,
+            failure: f0.choice || f1.choice || 'none',
+            failureAlt: f1.choice || null,
+            failureStable: !!agreed,
+            failureConfidence: typeof f0.confidence === 'number' ? f0.confidence : null,
+            failureProbabilities: f0.probabilities || null
+          };
+        });
+      });
+
+      var usage = res.usage || null;
+      return {
+        readings: readings,
+        engine: 'jev',
+        questions: Object.keys(questions).length,
+        usage: usage,
+        costUsd: usage && usage.input_tokens != null
+          ? (usage.input_tokens / 1e6) * USD_PER_INPUT_MTOK : null,
+        latencyMs: res._latencyMs,
+        model: res.model || null,
+        payload: { model: opts.model || DEFAULT_MODEL, state: state, questions: questions },
+        raw: res
+      };
+    });
+  }
+
   global.Jev = {
     triage: triage,
+    auditAccessibility: auditAccessibility,
+    heuristicAudit: heuristicAudit,
+    auditState: auditState,
+    auditQuestions: auditQuestions,
     triageJourneys: triageJourneys,
     heuristicJourneys: heuristicJourneys,
     journeyState: journeyState,

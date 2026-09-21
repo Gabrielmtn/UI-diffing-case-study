@@ -8,6 +8,7 @@ problems UX designers actually own.
 | --- | --- | --- |
 | **Parity** | Visual diffing of mockups against live production renders | *Does production still look like the design?* |
 | **Paths** | Journey and intent analysis over session streams | *Where does the interface fail what users came to do?* |
+| **Criteria** | WCAG conformance diffing against a reference implementation | *Is it conformant, or does it just look it?* |
 
 No build step, no dependencies, no server. Open `index.html`.
 
@@ -140,6 +141,91 @@ rather than eyeballed:
 
 ---
 
+# Prototype 3 — Criteria
+
+## The idea
+
+A System One model reads a probability off the option tokens in **one forward pass**. There is no
+chain of thought, no intermediate reasoning, nothing generated. That single fact governs how you
+use it:
+
+> **Expertise cannot be summoned with a persona, because there is no reasoning trace for a persona
+> to steer. It has to be encoded in the question set and in `criteria`.**
+
+Which is how expert judgement gets operationalised for human raters too. You don't tell a junior
+evaluator to "be an expert" — you hand them a behaviourally anchored rating scale. The expertise
+lives in the instrument, not the rater.
+
+WCAG is unusually good raw material for that instrument, because it ships **both halves of the
+rubric**: the normative requirement *and* a catalogue of documented common failures (the F-codes).
+The hard half of any rubric is describing what bad looks like, and a standards committee already
+did it. The expertise here is **ported, not invented**.
+
+## Two layers, and the line between them
+
+| Layer | Decides | Examples |
+| --- | --- | --- |
+| **Mechanical** | in code, with certainty | missing `alt` attribute · control with no accessible name · accessible name that does not contain its visible text · heading level skips |
+| **Semantic** | Jev | is the alt text a useful *equivalent*? does link text survive out of context? does this error say what to change? |
+
+Mechanically decidable violations are **removed before anything is sent**. Trading a certainty for
+a probability is a bad trade, and it is the most common way these tools get built wrong.
+
+## Three things that make it an instrument
+
+**1. Blind pairing.** Both implementations ride one state under neutral slot names `A` and `B`, and
+which slot holds the reference is randomised per run. If the state said *"this one is the conformant
+reference"*, the model would simply agree with the label and manufacture exactly the delta being
+measured. The state says only that the two are *"presented in arbitrary order and neither is known
+to be conformant."*
+
+**2. Permutation testing.** The serialisation order of `criteria` can move a logit-read answer, so
+every reading is taken three ways:
+
+| Reading | What it varies |
+| --- | --- |
+| `_p0` | rubric serialised `{true, false}` |
+| `_p1` | rubric serialised `{false, true}` |
+| `_n0` | polarity flipped — asks "does it FAIL", and `1 − p` should come back |
+
+Spread across those three is **the instrument's instability, which is a different thing from the
+model being unsure** — and the two get conflated constantly. A flat distribution in one reading
+means the artefact is ambiguous. An answer that moves across permutations means the measurement
+is not trustworthy at all. The UI shows the spread beside every number, and a reading that
+disagrees with itself by more than 0.25 is labelled *unmeasured*, not reported as a result.
+
+**3. Deltas, never levels.** A single absolute reading from a model whose priors are not your users
+is not evidence. A paired difference against a conformant reference is, because systematic bias
+largely cancels. The UI is built around this: the absolute probability is small and grey, the
+delta is large.
+
+## What's planted
+
+Three component pairs, each an accessible reference against a deliberately broken candidate:
+
+| Specimen | Planted | Caught by |
+| --- | --- | --- |
+| **Product card** | `alt="image"`, heading "Item", link "Read more" | all three semantic |
+| **Sign-up form** | placeholder-as-label, no date format stated, error reads "Invalid input" | all three semantic |
+| **Search + toolbar** | visible "Search" / name "Submit", visible "Delete document" / name "Remove", unlabelled icon button, placeholder-only search field, button named "button" | four mechanical, one semantic |
+
+The third specimen is the interesting one: **four of its five defects never reach the model at all**,
+because they are decidable. That is the split working as intended.
+
+## Known limits
+
+- **State ordering is not permuted.** Criteria order is; the order of the two implementations within
+  the state is not. That is a second position-bias axis, and it is untested here.
+- **The rubric is unverified against source.** `w3.org` was unreachable from the build sandbox, so
+  the criterion text and F-codes are reproduced from knowledge. Check them against
+  [WCAG 2.2](https://www.w3.org/TR/WCAG22/) before relying on them.
+- **The accessible-name computation is partial.** Enough for these criteria; not a full accname
+  implementation, and it does not claim to be.
+- **Conformance is not accessibility.** Passing every criterion here would not make a thing usable
+  by disabled people. This finds a class of defect cheaply; it does not replace testing with users.
+
+---
+
 ## Running it
 
 ```bash
@@ -259,6 +345,11 @@ assets/js/diff.js       perceptual delta, AA rejection, clustering, region metri
 assets/js/fixtures.js   procedural mockup/live renderers + planted ground truth
 assets/js/app.js        test matrix, runs, comparison stage, findings inbox, settings
 
+                        — Criteria —
+assets/js/wcag.js       criterion rubrics + the mechanical layer that bypasses the model
+assets/js/specimens.js  reference/candidate component pairs + planted ground truth
+assets/js/criteria-ui.js delta-first UI with permutation spread surfaced per reading
+
                         — Paths —
 assets/js/sessions.js   synthetic session streams + planted journey ground truth
 assets/js/paths.js      path folding, (screen, step) graph, Sankey layout, gap ranking
@@ -285,6 +376,13 @@ correctly ignores the sub-pixel noise; all four view modes render; the batched r
 with bearer auth and 31 questions for a 10-region page; the typed response parses back into
 verdicts, categories and severity labels; both failure paths (unreachable endpoint, HTTP error)
 surface actionable messages.
+
+**Criteria** — the mechanical layer catches all four decidable defects in the toolbar specimen and
+excludes them from the payload; the semantic layer recovers the planted defects in all three
+specimens; the state was grepped and carries no word identifying which slot is the reference; the
+three readings combine correctly, with the polarity-flipped one inverted, and a self-contradicting
+reading (`[0.15, 0.16, 0.62]`) is correctly reported as unstable rather than averaged into a
+confident-looking 0.31.
 
 **Paths** — 120 sessions fold to 5 paths and 16 transitions; all four planted affordance gaps are
 recovered in the right categories and the healthy control reads as *Straight through*; the two

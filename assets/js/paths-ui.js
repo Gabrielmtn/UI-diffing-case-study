@@ -364,26 +364,13 @@
 
   /* ------------------------------------------------------- view switching */
 
-  function show(view) {
-    $$('.suite-tab').forEach(function (b) {
-      var on = b.dataset.view === view;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-selected', on ? 'true' : 'false');
-    });
-    $('#view-parity').hidden = view !== 'parity';
-    $('#view-paths').hidden = view !== 'paths';
-    $('#runAllBtn').hidden = view !== 'parity';
-    $('#runPathsBtn').hidden = view !== 'paths';
-
-    if (view === 'paths') {
-      if (!state.ready && !state.running) run();
-      else if (state.ready) renderSankey();   // width may have changed while hidden
-    }
-  }
-
   function init() {
-    $$('.suite-tab').forEach(function (b) {
-      b.addEventListener('click', function () { show(b.dataset.view); });
+    global.ParityApp.registerView('paths', {
+      runButton: '#runPathsBtn',
+      onShow: function () {
+        if (!state.ready && !state.running) run();
+        else if (state.ready) renderSankey();   // width may have changed while hidden
+      }
     });
     $('#runPathsBtn').addEventListener('click', function () {
       state.ready = false;
@@ -410,5 +397,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  global.PathsView = { run: run, show: show, state: state };
+  global.PathsView = { run: run, state: state };
 })(window);

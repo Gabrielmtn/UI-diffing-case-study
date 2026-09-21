@@ -19,6 +19,7 @@
   <nav class="suite-nav" role="tablist" aria-label="Prototype">
     <button class="suite-tab active" data-view="parity" role="tab" aria-selected="true">Parity</button>
     <button class="suite-tab" data-view="paths" role="tab" aria-selected="false">Paths</button>
+    <button class="suite-tab" data-view="criteria" role="tab" aria-selected="false">Criteria</button>
   </nav>
   <div class="topbar-actions">
     <span class="engine-badge" id="engineBadge" title="Triage engine in use">
@@ -27,6 +28,7 @@
     <button class="btn ghost" id="settingsBtn" type="button">Settings</button>
     <button class="btn primary" id="runAllBtn" type="button">Run all tests</button>
     <button class="btn primary" id="runPathsBtn" type="button" hidden>Re-run analysis</button>
+    <button class="btn primary" id="runCriteriaBtn" type="button" hidden>Re-run audit</button>
   </div>
 </header>
 
@@ -239,6 +241,99 @@
   </section>
 
   </div>
+
+  <div class="view" id="view-criteria" hidden>
+
+  <section class="intro">
+    <h1>Is it conformant, or does it just look it?</h1>
+    <p>
+      Rule-based checkers settle what is computable &mdash; a missing <code>alt</code>, an
+      unlabelled control. What is left needs judgement: whether alt text is a useful
+      <em>equivalent</em>, whether link text survives out of context, whether an error tells you
+      what to change. WCAG ships both halves of the rubric, so the expertise is
+      <em>ported, not invented</em>.
+    </p>
+    <div class="pipeline" role="img" aria-label="Pipeline: parse, mechanical checks, Jev judges the residue, delta against the reference">
+      <span class="step"><b>1</b> Parse</span><span class="arrow">&rarr;</span>
+      <span class="step"><b>2</b> Mechanical checks</span><span class="arrow">&rarr;</span>
+      <span class="step accent"><b>3</b> Jev judges the residue</span><span class="arrow">&rarr;</span>
+      <span class="step"><b>4</b> Delta vs reference</span>
+    </div>
+    <p class="method-note">
+      A single absolute reading from a model whose priors are not your users is not evidence.
+      A <b>paired difference against a conformant reference</b> is, because systematic bias
+      largely cancels. So every reading here is taken blind &mdash; the model is never told
+      which implementation is the reference &mdash; and three ways, so you can see whether the
+      instrument is steady before you believe the number.
+    </p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head row">
+      <div>
+        <h2>Specimen</h2>
+        <p class="panel-sub" id="specimenBlurb"></p>
+      </div>
+      <div class="seg" id="specimenPicker"></div>
+    </div>
+    <div class="summary" id="criteriaSummary"></div>
+    <div class="specimens">
+      <div class="spec">
+        <div class="spec-head"><span>Reference</span><span class="spec-tag" id="slotRef">slot &mdash;</span></div>
+        <iframe class="spec-frame" id="frameRef" title="Reference implementation preview" sandbox></iframe>
+      </div>
+      <div class="spec">
+        <div class="spec-head"><span>Candidate</span><span class="spec-tag" id="slotCand">slot &mdash;</span></div>
+        <iframe class="spec-frame" id="frameCand" title="Candidate implementation preview" sandbox></iframe>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head row">
+      <div>
+        <h2>Deltas by success criterion</h2>
+        <p class="panel-sub">
+          Reference minus candidate, per element. The bar is the delta; the &plusmn; is the spread
+          across three readings of the same question.
+        </p>
+      </div>
+      <label class="toggle"><input type="checkbox" id="showStable" checked> Show unchanged</label>
+    </div>
+    <ul class="deltas" id="deltaList"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Settled in code</h2>
+      <p class="panel-sub">
+        Mechanically decidable, so never sent to the model &mdash; trading a certainty for a
+        probability is a bad trade.
+      </p>
+    </div>
+    <ul class="mech" id="mechList"></ul>
+    <details class="truth" id="critTruthWrap">
+      <summary>Ground truth &mdash; what was actually planted</summary>
+      <ul id="critTruthList"></ul>
+    </details>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>What gets sent to Jev</h2>
+      <p class="panel-sub">
+        One call. Both implementations under neutral slot names, every criterion, every
+        permutation &mdash; questions in a request are independent, so they batch without
+        contaminating each other.
+      </p>
+    </div>
+    <div class="code-cols">
+      <div><h4>State</h4><pre class="code" id="critState">Run an audit to see the exact payload.</pre></div>
+      <div><h4>Questions</h4><pre class="code" id="critQuestions">&mdash;</pre></div>
+    </div>
+  </section>
+
+  </div>
 </main>
 
 <footer class="footer">
@@ -317,6 +412,9 @@
 <script src="assets/js/sessions.js"></script>
 <script src="assets/js/paths.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/wcag.js"></script>
+<script src="assets/js/specimens.js"></script>
 <script src="assets/js/paths-ui.js"></script>
+<script src="assets/js/criteria-ui.js"></script>
 </body>
 </html>

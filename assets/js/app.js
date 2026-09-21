@@ -720,6 +720,11 @@
   }
 
   function init() {
+    $$('.suite-tab').forEach(function (b) {
+      b.addEventListener('click', function () { showView(b.dataset.view); });
+    });
+    ParityApp.registerView('parity', { runButton: '#runAllBtn' });
+
     fillSettingsForm();
     syncEngineBadge();
     renderMatrix();
@@ -840,11 +845,31 @@
       .catch(function (e) { toast(e.message, true); });
   }
 
+  // Views register themselves; the router only knows the naming convention.
+  var views = {};
+
+  function showView(name) {
+    $$('.suite-tab').forEach(function (b) {
+      var on = b.dataset.view === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    Object.keys(views).forEach(function (v) {
+      var el = $('#view-' + v);
+      if (el) el.hidden = v !== name;
+      var btn = views[v].runButton && $(views[v].runButton);
+      if (btn) btn.hidden = v !== name;
+    });
+    if (views[name] && views[name].onShow) views[name].onShow();
+  }
+
   window.ParityApp = {
     settings: function () { return settings; },
     onSettingsSaved: function (fn) { settingsListeners.push(fn); },
     toast: toast,
-    syncEngineBadge: syncEngineBadge
+    syncEngineBadge: syncEngineBadge,
+    registerView: function (name, hooks) { views[name] = hooks || {}; },
+    showView: showView
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
