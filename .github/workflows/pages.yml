@@ -3,8 +3,11 @@
 # There is no build step — index.html and assets/ are the site — so this just
 # uploads the repository root as the Pages artifact.
 #
-# `configure-pages` runs with enablement: true, which turns Pages on for the
-# repository the first time this workflow succeeds. No settings click needed.
+# Pages itself has to be switched on once by hand: a workflow's GITHUB_TOKEN can
+# deploy to an existing Pages site but cannot create one (POST /repos/.../pages
+# returns "Resource not accessible by integration"), so `enablement: true` is
+# deliberately not used here — it can only fail. Turn Pages on once at
+# Settings -> Pages -> Source: GitHub Actions, and every push deploys from then on.
 
 name: Deploy to GitHub Pages
 
@@ -36,8 +39,6 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
