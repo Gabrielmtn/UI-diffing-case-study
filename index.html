@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parity — UI diff console</title>
+<meta name="description" content="Run visual diffs between design mockups and live production renders, and let Jev triage which differences actually matter.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232563eb'/><path d='M9 11h14M9 16h14M9 21h8' stroke='white' stroke-width='2.4' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Parity</span>
+    <span class="brand-tag">design-to-production UI diffing</span>
+  </div>
+  <div class="topbar-actions">
+    <span class="engine-badge" id="engineBadge" title="Triage engine in use">
+      <span class="dot"></span><span id="engineLabel">Heuristic</span>
+    </span>
+    <button class="btn ghost" id="settingsBtn" type="button">Settings</button>
+    <button class="btn primary" id="runAllBtn" type="button">Run all tests</button>
+  </div>
+</header>
+
+<main>
+  <!-- ------------------------------------------------------------ intro -->
+  <section class="intro">
+    <h1>Is production still the design?</h1>
+    <p>
+      A deterministic pixel engine finds <em>where</em> the live render disagrees with the mockup.
+      Then <a href="https://docs.typesafe.ai/introduction" target="_blank" rel="noopener">Jev</a>,
+      TypeSafe's System One model, judges <em>whether each difference matters</em> — returning a
+      typed verdict, a category and a calibrated severity instead of prose.
+    </p>
+    <div class="pipeline" role="img" aria-label="Pipeline: capture, diff, Jev triage, verdict">
+      <span class="step"><b>1</b> Capture</span><span class="arrow">→</span>
+      <span class="step"><b>2</b> Pixel diff</span><span class="arrow">→</span>
+      <span class="step accent"><b>3</b> Jev triage</span><span class="arrow">→</span>
+      <span class="step"><b>4</b> Verdict</span>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- matrix -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Test matrix</h2>
+      <p class="panel-sub">Every page, at every viewport you're responsible for. Click a cell to inspect it.</p>
+    </div>
+    <div class="matrix-wrap">
+      <table class="matrix" id="matrix">
+        <thead><tr><th class="page-col">Page</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="matrix-legend">
+      <span><i class="chip pass"></i> Parity</span>
+      <span><i class="chip drift"></i> Drift — noise or expected variance only</span>
+      <span><i class="chip fail"></i> Regression — needs design review</span>
+      <span><i class="chip idle"></i> Not run</span>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------- your own -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Diff your own</h2>
+      <p class="panel-sub">
+        Drop a mockup export and a capture of the live page. Everything runs in this
+        browser — the images are never uploaded anywhere.
+      </p>
+    </div>
+    <div class="dropzones">
+      <label class="dropzone" id="dropMockup">
+        <input type="file" accept="image/*" hidden>
+        <span class="dz-title">Mockup</span>
+        <span class="dz-hint">Click, drop or paste an image</span>
+        <canvas class="dz-preview" hidden></canvas>
+      </label>
+      <label class="dropzone" id="dropLive">
+        <input type="file" accept="image/*" hidden>
+        <span class="dz-title">Live capture</span>
+        <span class="dz-hint">Click, drop or paste an image</span>
+        <canvas class="dz-preview" hidden></canvas>
+      </label>
+    </div>
+    <div class="dz-actions">
+      <button class="btn primary" id="runCustomBtn" type="button" disabled>Run diff</button>
+      <button class="btn ghost" id="clearCustomBtn" type="button" disabled>Clear</button>
+      <span class="dz-note" id="customNote"></span>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------- workspace -->
+  <section class="panel workspace" id="workspace" hidden>
+    <div class="panel-head row">
+      <div>
+        <h2 id="wsTitle">/pricing</h2>
+        <p class="panel-sub" id="wsSub">Desktop · 1180×820</p>
+      </div>
+      <div class="viewmodes" role="tablist" aria-label="Comparison view">
+        <button class="vm active" data-view="side" role="tab">Side by side</button>
+        <button class="vm" data-view="overlay" role="tab">Overlay</button>
+        <button class="vm" data-view="diff" role="tab">Heatmap</button>
+        <button class="vm" data-view="blink" role="tab">Blink</button>
+      </div>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <div class="workspace-body">
+      <div class="stage-col">
+        <div class="stage-tools">
+          <label class="wipe" id="wipeWrap" hidden>
+            Wipe <input type="range" id="wipe" min="0" max="100" value="50">
+          </label>
+          <label class="toggle"><input type="checkbox" id="showBoxes" checked> Region outlines</label>
+          <label class="toggle"><input type="checkbox" id="showAA"> Show anti-alias noise</label>
+        </div>
+        <div class="stage" id="stage"></div>
+      </div>
+
+      <aside class="findings-col">
+        <div class="findings-head">
+          <h3>Findings</h3>
+          <div class="seg" id="findingFilter">
+            <button class="active" data-filter="actionable">Actionable</button>
+            <button data-filter="all">All</button>
+          </div>
+        </div>
+        <ul class="findings" id="findings"></ul>
+        <details class="truth" id="truthWrap" hidden>
+          <summary>Ground truth — what was actually planted</summary>
+          <ul id="truthList"></ul>
+        </details>
+      </aside>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------- explainer -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>What gets sent to Jev</h2>
+      <p class="panel-sub">
+        One batched <code>POST /v1/systemone</code> per test. The shared state is sent once;
+        each region contributes a <code>noul</code>, a <code>choice</code> and a <code>score</code>.
+      </p>
+    </div>
+    <div class="code-cols">
+      <div><h4>Request</h4><pre class="code" id="reqPreview">Run a test to see the exact payload.</pre></div>
+      <div><h4>Response</h4><pre class="code" id="resPreview">—</pre></div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span>Pixel diff runs locally. Triage calls TypeSafe's <code>/v1/systemone</code>.</span>
+  <span><a href="https://docs.typesafe.ai/api" target="_blank" rel="noopener">Jev API docs</a></span>
+</footer>
+
+<!-- ------------------------------------------------------------ settings -->
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="modal-head">
+      <h3 id="setTitle">Settings</h3>
+      <button class="icon-btn" id="closeSettings" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <fieldset>
+        <legend>Triage engine</legend>
+        <label class="field">
+          <span>TypeSafe API key</span>
+          <input type="password" id="apiKey" placeholder="apikey_…" autocomplete="off" spellcheck="false">
+          <small>
+            Stored only in this browser's <code>localStorage</code> and sent only to the endpoint below.
+            Leave empty to run the local heuristic instead.
+          </small>
+        </label>
+        <label class="field">
+          <span>API endpoint</span>
+          <input type="text" id="endpoint" spellcheck="false">
+          <small>Point this at a proxy you control if the API does not send CORS headers.</small>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input type="text" id="model" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Regression threshold — <output id="jevThresholdOut">0.50</output></span>
+          <input type="range" id="jevThreshold" min="0.05" max="0.95" step="0.05" value="0.5">
+          <small>A region counts as a regression when Jev's <code>noul</code> probability clears this bar.</small>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pixel engine</legend>
+        <label class="field">
+          <span>Colour threshold — <output id="thresholdOut">0.08</output></span>
+          <input type="range" id="threshold" min="0.01" max="0.4" step="0.01" value="0.08">
+          <small>Lower is stricter. Fraction of the maximum perceptual YIQ distance.</small>
+        </label>
+        <label class="field">
+          <span>Minimum region area — <output id="minAreaOut">120</output> px²</span>
+          <input type="range" id="minArea" min="16" max="2000" step="16" value="120">
+        </label>
+        <label class="field">
+          <span>Cluster merge distance — <output id="dilateOut">1</output> cells</span>
+          <input type="range" id="dilate" min="0" max="4" step="1" value="1">
+        </label>
+        <label class="field">
+          <span>Max regions per test — <output id="maxRegionsOut">10</output></span>
+          <input type="range" id="maxRegions" min="3" max="20" step="1" value="10">
+        </label>
+        <label class="check"><input type="checkbox" id="ignoreAA" checked> Reject anti-aliased pixels</label>
+      </fieldset>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="resetSettings" type="button">Reset</button>
+      <button class="btn primary" id="saveSettings" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="assets/js/diff.js"></script>
+<script src="assets/js/fixtures.js"></script>
+<script src="assets/js/jev.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
