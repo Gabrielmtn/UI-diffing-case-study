@@ -309,8 +309,271 @@
     });
   }
 
+  /* ---------------------------------------------------------------- paths */
+
+  /*
+   * Journey triage runs as two chained batched calls, because the second
+   * question genuinely depends on the answer to the first: you cannot judge
+   * whether a step was progress without knowing what the user was trying to do.
+   *
+   *   call 1  per distinct path   -> intent (choice), success (noul), friction (score)
+   *   call 2  per screen pair     -> progress (noul), affordance gap (choice)
+   *           with call 1's intents folded into the state
+   */
+
+  function journeyState(agg, screens, extra) {
+    var state = {
+      product: 'A UI monitoring SaaS. Users create monitors on pages, compare them ' +
+               'against baselines, and get alerted when production drifts from the design.',
+      what_this_is: 'Aggregated product analytics. Sessions have been folded into distinct ' +
+                    'paths; consecutive visits to one screen are collapsed into a single step.',
+      screens: screens,
+      total_sessions: agg.sessions,
+      journeys: agg.signatures.map(function (sig) {
+        return {
+          id: sig.id,
+          sessions: sig.count,
+          path: sig.visits.map(function (v) {
+            var bits = [v.screen];
+            var acts = v.actions.filter(function (a) { return a !== 'view'; });
+            if (acts.length) bits.push('(' + acts.join(',') + ')');
+            if (v.labels.length) bits.push('"' + v.labels.join('", "') + '"');
+            return bits.join(' ');
+          }),
+          // Counters are summed across every session on this path, so report them
+          // per session -- otherwise a popular path looks pathological.
+          backs_per_session: round(sig.backs / sig.count, 2),
+          searches_per_session: round(sig.searches / sig.count, 2),
+          rage_clicks_per_session: round(sig.rage / sig.count, 2),
+          seconds_per_session: Math.round(sig.totalMs / sig.count / 1000),
+          reached_a_completion_event: sig.converted,
+          escalated_to_support: sig.escalated
+        };
+      })
+    };
+    if (extra) Object.keys(extra).forEach(function (k) { state[k] = extra[k]; });
+    return state;
+  }
+
+  function journeyQuestions(agg, intents, friction) {
+    var q = {};
+    agg.signatures.forEach(function (sig) {
+      q[sig.id + '_intent'] = {
+        type: 'choice',
+        instructions: 'Journey ' + sig.id + ': what were these users trying to accomplish?',
+        criteria: intents
+      };
+      q[sig.id + '_success'] = {
+        type: 'noul',
+        instructions: 'Journey ' + sig.id + ': did these users accomplish what they came to do?',
+        criteria: {
+          'true': 'They reached the thing they were after, even if it took a detour.',
+          'false': 'They gave up, escalated to support, or left without getting there.'
+        }
+      };
+      q[sig.id + '_friction'] = {
+        type: 'score',
+        instructions: 'Journey ' + sig.id + ': how much friction did these users hit on the way? ' +
+          'Judge the route, not the destination -- a journey can succeed and still be painful.',
+        criteria: friction
+      };
+    });
+    return q;
+  }
+
+  function transitionQuestions(agg, gaps) {
+    var q = {};
+    agg.transitions.forEach(function (t) {
+      q[t.id + '_progress'] = {
+        type: 'noul',
+        instructions: 'Transition ' + t.id + ' (' + t.from + ' to ' + t.to + '): given what ' +
+          'these users were trying to do, was this step deliberate progress toward their goal?',
+        criteria: {
+          'true': 'A direct, intended move: the user knew where they were going and the interface took them there.',
+          'false': 'Recovery or hunting: backtracking, falling back to search or docs, retrying, or giving up.'
+        }
+      };
+      q[t.id + '_gap'] = {
+        type: 'choice',
+        instructions: 'Transition ' + t.id + ' (' + t.from + ' to ' + t.to + '): if users struggled ' +
+          'here, what is missing from the interface? Answer "none" when the route was direct ' +
+          'and nothing needs fixing.',
+        criteria: gaps
+      };
+    });
+    return q;
+  }
+
+  function transitionPayload(agg, screens, intents) {
+    return journeyState(agg, screens, {
+      journey_intents: intents,
+      note_on_transitions: 'Each transition below is one screen pair, aggregated across every ' +
+        'journey it appears in. Use the journey intents above to judge what the user was after.',
+      transitions: agg.transitions.map(function (t) {
+        var queries = Object.keys(t.queries);
+        return {
+          id: t.id,
+          from: t.from,
+          to: t.to,
+          sessions: t.value,
+          arrived_after_pressing_back: t.viaBack,
+          arrived_via_search: t.viaSearch,
+          rage_clicks: t.rage,
+          search_queries: queries.length ? queries : undefined,
+          appears_at_step: Object.keys(t.steps).map(Number)
+        };
+      })
+    });
+  }
+
+  /** Rule-based stand-in so the Paths view works with no key configured. */
+  function heuristicJourneys(agg) {
+    var signatures = {}, transitions = {};
+
+    agg.signatures.forEach(function (sig) {
+      var screens = sig.visits.map(function (v) { return v.screen; }).join(' ');
+      // Order matters: a signup that came through pricing is still evaluation.
+      var intent = /pricing/.test(screens) ? 'evaluate'
+        : /billing/.test(screens) ? 'administer'
+        : /alerts/.test(screens) ? 'diagnose'
+        : /monitors\/new/.test(screens) ? 'onboard'
+        : 'configure';
+
+      var noise = (sig.backs + sig.searches + sig.rage * 1.5) / sig.count;
+      var friction = Math.min(4, noise * 1.1 + (sig.escalated ? 2.2 : 0) + (sig.converted ? 0 : 1.2));
+
+      signatures[sig.id] = {
+        intent: intent,
+        intentConfidence: 0.5,
+        intentProbabilities: null,
+        successProbability: sig.converted ? 0.88 : (sig.escalated ? 0.08 : 0.22),
+        succeeded: sig.converted,
+        frictionScore: friction,
+        frictionLabel: null,
+        frictionConfidence: 0.5
+      };
+    });
+
+    agg.transitions.forEach(function (t) {
+      var backShare = t.viaBack / Math.max(1, t.value);
+      var searchShare = t.viaSearch / Math.max(1, t.value);
+      var rageShare = t.rage / Math.max(1, t.value);
+      // Reaching for a human is not progress toward the goal, however calmly the
+      // user got there — it means the interface ran out of road.
+      var escalation = t.to === '/support' ? 0.7 : 0;
+      var progress = 1 - Math.min(0.92,
+        backShare * 0.55 + searchShare * 0.6 + rageShare * 0.3 + escalation);
+
+      // A step users sailed through has no gap, whatever route it was on.
+      var gap = 'none';
+      if (progress < 0.85) {
+        if (rageShare > 0.5) gap = 'feedback';
+        else if (t.to === '/support') gap = 'missing-capability';
+        else if (searchShare > 0.5 && backShare > 0.2) gap = 'placement';
+        else if (searchShare > 0.5) gap = 'discoverability';
+        else if (backShare > 0.5) gap = 'labeling';
+      }
+
+      transitions[t.id] = {
+        progressProbability: progress,
+        gap: gap,
+        gapConfidence: 0.5,
+        gapProbabilities: null
+      };
+    });
+
+    return {
+      signatures: signatures, transitions: transitions,
+      engine: 'heuristic', calls: 0, usage: null, latencyMs: 0, costUsd: null,
+      model: null, raw: null
+    };
+  }
+
+  /**
+   * Triage a path graph. Resolves to { signatures, transitions, engine, usage, ... }
+   * keyed by the ids `paths.js` assigned.
+   */
+  function triageJourneys(agg, taxonomy, opts) {
+    opts = opts || {};
+    if (!opts.apiKey || !agg.signatures.length) return Promise.resolve(heuristicJourneys(agg));
+
+    var threshold = opts.threshold != null ? opts.threshold : 0.5;
+    var payload1 = {
+      model: opts.model || DEFAULT_MODEL,
+      state: journeyState(agg, taxonomy.screens),
+      questions: journeyQuestions(agg, taxonomy.intents, taxonomy.friction)
+    };
+
+    return callJev(payload1.state, payload1.questions, opts).then(function (res1) {
+      var a1 = res1.answers || {};
+      var signatures = {};
+      var intents = {};
+
+      agg.signatures.forEach(function (sig) {
+        var intent = a1[sig.id + '_intent'] || {};
+        var success = a1[sig.id + '_success'] || {};
+        var fric = a1[sig.id + '_friction'] || {};
+        var levels = fric.legend && fric.legend.length ? fric.legend : taxonomy.friction;
+        var score = typeof fric.score === 'number' ? fric.score : 0;
+
+        intents[sig.id] = intent.choice || 'configure';
+        signatures[sig.id] = {
+          intent: intent.choice || 'configure',
+          intentConfidence: typeof intent.confidence === 'number' ? intent.confidence : null,
+          intentProbabilities: intent.probabilities || null,
+          successProbability: typeof success.noul === 'number' ? success.noul : null,
+          succeeded: (typeof success.noul === 'number' ? success.noul : 0) >= threshold,
+          frictionScore: score,
+          frictionLabel: levels[Math.max(0, Math.min(levels.length - 1, Math.round(score)))],
+          frictionConfidence: typeof fric.confidence === 'number' ? fric.confidence : null
+        };
+      });
+
+      var state2 = transitionPayload(agg, taxonomy.screens, intents);
+      var questions2 = transitionQuestions(agg, taxonomy.gaps);
+
+      return callJev(state2, questions2, opts).then(function (res2) {
+        var a2 = res2.answers || {};
+        var transitions = {};
+
+        agg.transitions.forEach(function (t) {
+          var prog = a2[t.id + '_progress'] || {};
+          var gap = a2[t.id + '_gap'] || {};
+          transitions[t.id] = {
+            progressProbability: typeof prog.noul === 'number' ? prog.noul : null,
+            gap: gap.choice || 'none',
+            gapConfidence: typeof gap.confidence === 'number' ? gap.confidence : null,
+            gapProbabilities: gap.probabilities || null
+          };
+        });
+
+        var inTok = ((res1.usage && res1.usage.input_tokens) || 0) +
+                    ((res2.usage && res2.usage.input_tokens) || 0);
+        return {
+          signatures: signatures,
+          transitions: transitions,
+          engine: 'jev',
+          calls: 2,
+          questions: Object.keys(payload1.questions).length + Object.keys(questions2).length,
+          usage: { input_tokens: inTok,
+                   output_tokens: ((res1.usage && res1.usage.output_tokens) || 0) +
+                                  ((res2.usage && res2.usage.output_tokens) || 0) },
+          costUsd: (inTok / 1e6) * USD_PER_INPUT_MTOK,
+          latencyMs: (res1._latencyMs || 0) + (res2._latencyMs || 0),
+          model: res2.model || res1.model || null,
+          payloads: [payload1, { model: payload1.model, state: state2, questions: questions2 }],
+          raw: [res1, res2]
+        };
+      });
+    });
+  }
+
   global.Jev = {
     triage: triage,
+    triageJourneys: triageJourneys,
+    heuristicJourneys: heuristicJourneys,
+    journeyState: journeyState,
+    journeyQuestions: journeyQuestions,
     heuristicTriage: heuristicTriage,
     buildState: buildState,
     buildQuestions: buildQuestions,

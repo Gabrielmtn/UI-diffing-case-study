@@ -24,6 +24,7 @@
   var activeFinding = null;
   var blinkTimer = null;
   var blinkOn = false;
+  var settingsListeners = [];
 
   var $ = function (sel) { return document.querySelector(sel); };
   var $$ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
@@ -755,6 +756,7 @@
       renderMatrix();
       $('#workspace').hidden = true;
       selected = null;
+      settingsListeners.forEach(function (fn) { fn(settings); });
       toast(had ? 'Settings saved — previous runs cleared. Run the tests again.' : 'Settings saved.');
     });
 
@@ -837,6 +839,13 @@
       .then(function () { openCell('pricing', 'desktop'); })
       .catch(function (e) { toast(e.message, true); });
   }
+
+  window.ParityApp = {
+    settings: function () { return settings; },
+    onSettingsSaved: function (fn) { settingsListeners.push(fn); },
+    toast: toast,
+    syncEngineBadge: syncEngineBadge
+  };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

@@ -1,15 +1,29 @@
-# Parity — a UI diffing case study
+# Parity — Jev for UX, a case study
 
-A single static page that diffs **design mockups against live production renders**, and uses
-[Jev](https://docs.typesafe.ai/introduction) — TypeSafe AI's System One model — to decide which
-of the differences a designer actually needs to act on.
+A single static page holding two prototypes that put
+[Jev](https://docs.typesafe.ai/introduction) — TypeSafe AI's System One model — to work on
+problems UX designers actually own.
 
-Think Email on Acid, but for design-to-production parity: a matrix of pages × viewports, a
-pass/fail badge per cell, and a triage inbox of findings underneath.
+| | Prototype | Question it answers |
+| --- | --- | --- |
+| **Parity** | Visual diffing of mockups against live production renders | *Does production still look like the design?* |
+| **Paths** | Journey and intent analysis over session streams | *Where does the interface fail what users came to do?* |
 
 No build step, no dependencies, no server. Open `index.html`.
 
+## Why Jev, in one paragraph
+
+Jev's edge for UX work is not that it judges — it is that it judges **calibrated and cheap enough
+to run on everything**. Traditional UX research gives deep qualitative insight at n=8; analytics
+gives shallow counts at n=100k. Jev closes the gap: semantic judgement at n=100k, returning
+numbers you can legitimately average because they are calibrated. Both prototypes exploit that
+same property.
+
 ---
+
+---
+
+# Prototype 1 — Parity
 
 ## The idea
 
@@ -46,6 +60,83 @@ state once and attaching 3N+1 questions costs far less than N round trips. A 10-
 
 Because the answer shape is fixed by the request, the result is branchable with plain code:
 `if (answers.R3_real.noul > 0.5)`. No parsing, no regex, no malformed-response risk.
+
+---
+
+# Prototype 2 — Paths
+
+## The idea
+
+Path analytics (Amplitude, Mixpanel) show you *what* sequence happened but never *whether it was
+a good one* — a six-step journey looks identical to a six-step flail. Jev supplies the missing
+judgement, and because it is calibrated it can be aggregated into a metric rather than read
+anecdote by anecdote.
+
+Sessions are folded into distinct paths, then judged in **two chained calls** — chained because
+the second question genuinely depends on the first: you cannot tell whether a step was progress
+without knowing what the user was trying to do.
+
+```
+sessions ─▶ fold to paths ─▶ Jev call 1 ─▶ Jev call 2 ─▶ ranked affordance gaps
+                             intent        progress
+                             success       gap type
+                             friction      (intents folded into state)
+```
+
+| Call | Scope | Questions |
+| --- | --- | --- |
+| 1 | per distinct path | `choice` intent · `noul` did they succeed · `score` friction |
+| 2 | per screen pair | `noul` was this deliberate progress · `choice` what affordance is missing |
+
+A 120-session run folds to 5 paths and 16 transitions — 47 questions across 2 calls, roughly
+**$0.0003**. The affordance gap ranking is then plain arithmetic on calibrated numbers:
+
+```
+impact = sessions on the step × struggle × friction of the journeys routed through it
+         where struggle = 1 − p(intentional progress)
+```
+
+## What the views show
+
+**Intent against outcome** — sessions by what Jev judged they came to do, against how far they
+got. Mass off the leading diagonal is where the product fights its users.
+
+**Path graph** — a Sankey whose nodes are *(screen, step)* pairs, the way real path analysers do
+it, so a screen revisited at step 4 is its own node and backtracking reads as a return. Ribbon
+**thickness is volume**; ribbon **colour is flow health**, which comes from Jev. Neither restates
+the other.
+
+**Affordance gaps, ranked** — what to fix first, with the evidence (search queries, back
+presses, rage clicks) that justifies it.
+
+## What's planted
+
+Five journey archetypes through a fictional monitoring product, 120 sessions. Four carry a
+planted gap; one is deliberately healthy, because a tool that cannot say *"this path is fine"* is
+a complaint generator rather than an instrument.
+
+| Journey | Planted | Truth |
+| --- | --- | --- |
+| Evaluate → convert | Nothing — the funnel works | **control, no gap** |
+| Create first monitor | Overview has no primary "New monitor" action | discoverability |
+| Find billing | Billing nested under Settings with no nav entry | placement |
+| Why did this alert fire | Alerts never link to the baseline that failed | missing-capability |
+| Export a report | Export is disabled with no explanation | feedback |
+
+The **Ground truth** disclosure under the ranking lets you check the output against what was
+actually broken.
+
+## A note on colour
+
+The encodings were chosen before any code was written and checked with a palette validator
+rather than eyeballed:
+
+- **Ribbons** — ordinal blue ramp on flow health (`#86b6ef → #184f95`), monotone lightness, single
+  hue, light end clearing 2:1 on the surface. Quiet when smooth, heavy when stuck.
+- **Matrix** — sequential blue on session count; the lightest step may recede toward the surface
+  because every cell carries its count as text.
+- **Gap ranking** — the reserved status palette, always with a text label beside the colour, so
+  severity is never carried by hue alone.
 
 ---
 
@@ -114,7 +205,7 @@ With a proxy like this the page can be left with an empty API key field — the 
 
 ---
 
-## What's in the demo
+## What's in the Parity demo
 
 Both sides of every built-in test are **drawn in canvas at runtime** from a spec object, so there
 are no binary fixtures in the repo and the ground truth is explicit. The "live" spec is the
@@ -145,7 +236,7 @@ The findings panel has a **Ground truth** disclosure so you can check the engine
 what was actually broken. Item 6 and item 5 are the interesting ones: a diff tool that reports
 them is a diff tool people stop reading.
 
-### Diff your own
+### Diff your own (Parity)
 
 Drop, paste or pick any two images — a Figma export and a screenshot of production — and the same
 pipeline runs on them. If the two differ in size the live capture is rescaled to the mockup's
@@ -157,12 +248,21 @@ dimensions. Nothing is uploaded; the pixels never leave the browser. (Only the d
 ## Layout
 
 ```
-index.html              page shell
+index.html              suite shell — both prototypes, one nav
 assets/css/app.css      styles
+
+                        — shared —
+assets/js/jev.js        /v1/systemone client, prompt construction, heuristic fallbacks
+
+                        — Parity —
 assets/js/diff.js       perceptual delta, AA rejection, clustering, region metrics
 assets/js/fixtures.js   procedural mockup/live renderers + planted ground truth
-assets/js/jev.js        /v1/systemone client, prompt construction, heuristic fallback
-assets/js/app.js        matrix, runs, comparison stage, findings inbox, settings
+assets/js/app.js        test matrix, runs, comparison stage, findings inbox, settings
+
+                        — Paths —
+assets/js/sessions.js   synthetic session streams + planted journey ground truth
+assets/js/paths.js      path folding, (screen, step) graph, Sankey layout, gap ranking
+assets/js/paths-ui.js   intent matrix, path graph, gap ranking, view switching
 ```
 
 Plain classic scripts — no modules, no bundler — so the page also works straight off `file://`.
@@ -178,11 +278,19 @@ to group a broken heading into one finding instead of fifty.
 
 ## Verified, and not
 
-Tested end to end in headless Chromium: the diff engine finds all six planted `/pricing`
-regressions as distinct regions and correctly ignores the sub-pixel noise; all four view modes
-render; the batched request goes out with bearer auth and 31 questions for a 10-region page; the
-typed response parses back into verdicts, categories and severity labels; and both failure paths
-(unreachable endpoint, HTTP error) surface actionable messages.
+Tested end to end in headless Chromium.
+
+**Parity** — the diff engine finds all six planted `/pricing` regressions as distinct regions and
+correctly ignores the sub-pixel noise; all four view modes render; the batched request goes out
+with bearer auth and 31 questions for a 10-region page; the typed response parses back into
+verdicts, categories and severity labels; both failure paths (unreachable endpoint, HTTP error)
+surface actionable messages.
+
+**Paths** — 120 sessions fold to 5 paths and 16 transitions; all four planted affordance gaps are
+recovered in the right categories and the healthy control reads as *Straight through*; the two
+chained calls go out in order with call 1's intents folded into call 2's state (15 then 32
+questions); cost and latency aggregate across both; the Sankey, intent matrix, legend and hover
+tooltips all render without console errors.
 
 **The one thing not verified against the real service is the live call itself** — `api.typesafe.ai`
 is unreachable from the sandbox this was built in, so the network path was validated against a

@@ -16,16 +16,22 @@
     <span class="brand-name">Parity</span>
     <span class="brand-tag">design-to-production UI diffing</span>
   </div>
+  <nav class="suite-nav" role="tablist" aria-label="Prototype">
+    <button class="suite-tab active" data-view="parity" role="tab" aria-selected="true">Parity</button>
+    <button class="suite-tab" data-view="paths" role="tab" aria-selected="false">Paths</button>
+  </nav>
   <div class="topbar-actions">
     <span class="engine-badge" id="engineBadge" title="Triage engine in use">
       <span class="dot"></span><span id="engineLabel">Heuristic</span>
     </span>
     <button class="btn ghost" id="settingsBtn" type="button">Settings</button>
     <button class="btn primary" id="runAllBtn" type="button">Run all tests</button>
+    <button class="btn primary" id="runPathsBtn" type="button" hidden>Re-run analysis</button>
   </div>
 </header>
 
 <main>
+  <div class="view" id="view-parity">
   <!-- ------------------------------------------------------------ intro -->
   <section class="intro">
     <h1>Is production still the design?</h1>
@@ -153,6 +159,86 @@
       <div><h4>Response</h4><pre class="code" id="resPreview">—</pre></div>
     </div>
   </section>
+  </div>
+
+  <div class="view" id="view-paths" hidden>
+
+  <section class="intro">
+    <h1>Where does intent break down?</h1>
+    <p>
+      Path analytics count what users did. They cannot tell a six-step journey from a
+      six-step struggle. Jev judges each path's <em>intent</em> and each step's
+      <em>progress</em> &mdash; cheap enough to run on every session, calibrated enough to average.
+      What is left is the gap between what users wanted and what the interface afforded.
+    </p>
+    <div class="pipeline" role="img" aria-label="Pipeline: sessions, fold into paths, Jev judges intent and progress, affordance gaps">
+      <span class="step"><b>1</b> Sessions</span><span class="arrow">&rarr;</span>
+      <span class="step"><b>2</b> Fold to paths</span><span class="arrow">&rarr;</span>
+      <span class="step accent"><b>3</b> Jev judges</span><span class="arrow">&rarr;</span>
+      <span class="step"><b>4</b> Affordance gaps</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="summary" id="pathSummary"></div>
+    <div class="panel-head">
+      <h2>Intent against outcome</h2>
+      <p class="panel-sub">
+        Sessions by what Jev judged they came to do, against how far they got.
+        Mass off the leading diagonal is where the product fights its users.
+      </p>
+    </div>
+    <div class="matrix-wrap"><table class="imatrix" id="intentMatrix"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head row">
+      <div>
+        <h2>Path graph</h2>
+        <p class="panel-sub">
+          Ribbon thickness is sessions. Ribbon colour is flow health &mdash; that part is
+          Jev's, not a restatement of volume.
+        </p>
+      </div>
+      <div class="flow-legend" id="flowLegend"></div>
+    </div>
+    <div class="sankey-wrap">
+      <div class="sankey-scroll"><svg id="sankey" role="img" aria-label="Session path graph"></svg></div>
+      <div class="viz-tip" id="sankeyTip" hidden></div>
+    </div>
+    <p class="sankey-note" id="sankeyNote"></p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Affordance gaps, ranked</h2>
+      <p class="panel-sub">
+        Sessions on the step &times; struggle &times; the friction of the journeys routed
+        through it. What to fix first, and why.
+      </p>
+    </div>
+    <ul class="gaps" id="gapList"></ul>
+    <details class="truth" id="pathTruthWrap">
+      <summary>Ground truth &mdash; what was actually planted</summary>
+      <ul id="pathTruthList"></ul>
+    </details>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>What gets sent to Jev</h2>
+      <p class="panel-sub">
+        Two chained calls: the second needs the first's answer, because you cannot judge
+        whether a step was progress without knowing what the user was after.
+      </p>
+    </div>
+    <div class="code-cols">
+      <div><h4>Call 1 &mdash; journeys</h4><pre class="code" id="pathReq1">Run the analysis to see the exact payload.</pre></div>
+      <div><h4>Call 2 &mdash; transitions</h4><pre class="code" id="pathReq2">&mdash;</pre></div>
+    </div>
+  </section>
+
+  </div>
 </main>
 
 <footer class="footer">
@@ -228,6 +314,9 @@
 <script src="assets/js/diff.js"></script>
 <script src="assets/js/fixtures.js"></script>
 <script src="assets/js/jev.js"></script>
+<script src="assets/js/sessions.js"></script>
+<script src="assets/js/paths.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/paths-ui.js"></script>
 </body>
 </html>
